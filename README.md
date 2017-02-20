@@ -131,3 +131,9 @@ route({
     }
 })
 ```
+
+Finally, you'll need to install the typings for Express, Joi and Boom, otherwise your app probably won't compile:
+
+```bash
+yarn add @types/express@^4.0.35 @types/joi@^9.0.32 @types/boom@^4.2.0
+```
