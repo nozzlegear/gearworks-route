@@ -46,7 +46,7 @@ export interface Config<UserType> {
     shopify_secret_key: string;
     auth_header_name?: string;
     sealable_user_props?: (keyof UserType)[];
-    userAuthIsValid?: (user) => Promise<boolean>;
+    userAuthIsValid?: (user: UserType) => boolean | Promise<boolean>;
 }
 
 export default function getRouter<UserType>(app: Express, config: Config<UserType>) {
@@ -149,7 +149,7 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
 
                 // If user id exists in invalidation cache, return a 401 unauthed response.
                 try {
-                    const authIsValid = await config.userAuthIsValid(user);
+                    const authIsValid = await Bluebird.resolve(config.userAuthIsValid(user));
 
                     if (!authIsValid) {
                         return next(boom.unauthorized(`userAuthIsValid function indicates that user's JWT token is no longer valid.`));
