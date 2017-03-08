@@ -162,7 +162,7 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
                 const unsealedProps = await Bluebird.reduce(config.sealable_user_props, async (result, propName: string) => {
                     if (!!user[propName]) {
                         try {
-                            result[propName] = await unseal(user[propName], config.jwt_secret_key);
+                            result[propName] = await unseal(user[propName], config.iron_password);
                         } catch (e) {
                             inspect(`Failed to decrypt Iron-sealed property ${propName}.`, e);
                         }
