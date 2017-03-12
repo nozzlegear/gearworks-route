@@ -21,6 +21,7 @@ export type WithSessionTokenFunction<UserType> = (user: UserType, expInDays?: nu
 
 export interface RouterResponse<UserType> extends Response {
     withSessionToken: WithSessionTokenFunction<UserType>;
+    json: <DataType>(data: DataType) => RouterResponse<UserType>;
 }
 
 export interface RouterFunctionConfig<UserType> {
