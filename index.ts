@@ -77,6 +77,8 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
         throw error;
     }
 
+    const jwtAlgorithm = "HS256";
+
     // Custom functions for Express request and response objects
     const withSessionToken: WithSessionTokenFunction<UserType> = async function (this: RouterResponse<UserType>, user: UserType, expInDays = 30) {
         // Encrypt any sensitive properties (access tokens, api keys, etc.) with Iron.
@@ -103,7 +105,7 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
             ...sealedProps,
         }
 
-        return this.json({ token: encode(session, config.jwt_secret_key) }) as RouterResponse<UserType>;
+        return this.json({ token: encode(session, config.jwt_secret_key, jwtAlgorithm) }) as RouterResponse<UserType>;
     };
 
     // Shim the app.response and app.request objects with our custom functions
@@ -138,7 +140,7 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
                 let user;
 
                 try {
-                    user = decode(header, config.jwt_secret_key);
+                    user = decode(header, config.jwt_secret_key, false, jwtAlgorithm);
                 } catch (e) {
                     return next(boom.unauthorized(`Missing or invalid ${config.auth_header_name || "gearworks_auth"} header.`));
                 }
