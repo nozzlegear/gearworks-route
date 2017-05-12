@@ -1,13 +1,18 @@
-import * as joi from "joi";
-import * as boom from "boom";
-import * as cors from "cors";
-import inspect from "logspect";
-import * as Bluebird from "bluebird";
-import { Auth } from "shopify-prime";
-import { seal, unseal } from "iron-async";
-import { decode, encode } from "jwt-simple";
-import { Express, Request, Response, NextFunction } from "express";
-import { json as parseJson, urlencoded as parseUrlEncoded } from "body-parser";
+import * as Bluebird from 'bluebird';
+import * as boom from 'boom';
+import * as cors from 'cors';
+import * as joi from 'joi';
+import inspect from 'logspect';
+import { Auth } from 'shopify-prime';
+import { decode, encode } from 'jwt-simple';
+import {
+    Express,
+    NextFunction,
+    Request,
+    Response
+    } from 'express';
+import { json as parseJson, urlencoded as parseUrlEncoded } from 'body-parser';
+import { seal, unseal } from 'iron-async';
 
 export interface RouterRequest<UserType> extends Request {
     user?: UserType;
@@ -49,6 +54,11 @@ export interface Config<UserType> {
     sealable_user_props?: (keyof UserType)[];
     userAuthIsValid?: (user: UserType) => boolean | Promise<boolean>;
 }
+
+/**
+ * The object sent to a client after calling res.withSessionToken<UserType>(user);
+ */
+export type SessionToken<UserType> = UserType & { exp: number };
 
 export default function getRouter<UserType>(app: Express, config: Config<UserType>) {
     // Add configuration defaults
@@ -99,7 +109,7 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
 
         // exp: Part of the jwt spec, specifies an expiration date for the token.
         const exp = Date.now() + (expInDays * 24 * 60 * 60 * 1000);
-        const session = {
+        const session: SessionToken<UserType> = {
             ...user as any,
             exp,
             ...sealedProps,
