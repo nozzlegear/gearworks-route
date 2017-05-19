@@ -143,6 +143,15 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
         }
 
         app[method](routeConfig.path, corsMiddleware, jsonParserMiddleware, formParserMiddleware, async function (req: RouterRequest<UserType>, res: RouterResponse<UserType>, next: NextFunction) {
+            if (res.finished) {
+                // Letting routes continue after a previous route has set headers causes more bugs than good.
+                // For example, we have two PUT routes: api/orders/ship and api/orders/:id. When the ship route finishes
+                // it sends its response, then transfers control to the next route (api/orders/:id) which tries to update
+                // the order itself and probably breaks. We almost never want that to happen, so we check here if the
+                // response has been sent and call next() if so, skipping all further routes.
+                return next();
+            }
+
             req.domainWithProtocol = `${req.protocol}://${req.hostname}` + (req.hostname === "localhost" ? ":3000" : "");
 
             if (routeConfig.requireAuth) {
