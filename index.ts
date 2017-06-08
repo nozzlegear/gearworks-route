@@ -197,7 +197,7 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
             };
 
             if (routeConfig.bodyValidation) {
-                const validation = joi.validate(req.body, routeConfig.bodyValidation);
+                const validation = joi.validate(req.body, routeConfig.bodyValidation, { stripUnknown: true });
 
                 if (validation.error) {
                     const error = boom.badData(validation.error.message, validation.error.details);
@@ -209,7 +209,7 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
             }
 
             if (routeConfig.queryValidation) {
-                const validation = joi.validate(req.query, routeConfig.queryValidation);
+                const validation = joi.validate(req.query, routeConfig.queryValidation, { stripUnknown: true });
 
                 if (validation.error) {
                     const error = boom.badData(validation.error.message, validation.error.details);
@@ -221,7 +221,7 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
             }
 
             if (routeConfig.paramValidation) {
-                const validation = joi.validate(req.params, routeConfig.paramValidation);
+                const validation = joi.validate(req.params, routeConfig.paramValidation, { stripUnknown: true });
 
                 if (validation.error) {
                     const error = boom.badData(validation.error.message, validation.error.details);
