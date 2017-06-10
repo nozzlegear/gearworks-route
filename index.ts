@@ -55,6 +55,10 @@ export interface Config<UserType> {
     userAuthIsValid?: (user: UserType) => boolean | Promise<boolean>;
 }
 
+export interface SessionTokenResponse {
+    token: string;
+}
+
 /**
  * The object sent to a client after calling res.withSessionToken<UserType>(user);
  */
@@ -115,7 +119,7 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
             ...sealedProps,
         }
 
-        return this.json({ token: encode(session, config.jwt_secret_key, jwtAlgorithm) }) as RouterResponse<UserType>;
+        return this.json<SessionTokenResponse>({ token: encode(session, config.jwt_secret_key, jwtAlgorithm) }) as RouterResponse<UserType>;
     };
 
     // Shim the app.response and app.request objects with our custom functions
