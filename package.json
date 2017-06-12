@@ -1,6 +1,6 @@
 {
   "name": "gearworks-route",
-  "version": "1.7.0",
+  "version": "1.8.0-rc.1",
   "description": "The routing function used by Gearworks apps, complete with full TypeScript definitions. Gearworks is the fastest way to get started with building Shopify apps!",
   "main": "bin/index.js",
   "typings": "bin/index.d.ts",
@@ -45,6 +45,6 @@
     "@types/express": "^4.0.35",
     "@types/joi": "9.0.32",
     "rimraf": "^2.6.0",
-    "typescript": "^2.1.6"
+    "typescript": "^2.3.4"
   }
 }
