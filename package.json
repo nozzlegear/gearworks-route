@@ -4,6 +4,9 @@
   "description": "The routing function used by Gearworks apps, complete with full TypeScript definitions. Gearworks is the fastest way to get started with building Shopify apps!",
   "main": "bin/index.js",
   "typings": "bin/index.d.ts",
+  "files":[
+    "bin"
+  ],
   "scripts": {
     "build": "rimraf ./bin && tsc",
     "prepublishOnly": "npm run build"
