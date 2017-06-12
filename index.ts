@@ -43,9 +43,9 @@ export interface RouterFunctionConfig<UserType> {
     validateShopifyWebhook?: boolean;
     validateShopifyProxyPage?: boolean;
     /**
-     * Size limit for incoming requests to the route. Can be set to a string (e.g. '50mb') or a number representing byte length (e.g. 52428800).
+     * Size limit for incoming requests to the route. Can be set to a string (e.g. '50mb') or a number representing byte length (e.g. 52428800). Defaults to 1mb.
      */
-    request_size_limit?: number | string;
+    requestSizeLimit?: number | string;
 }
 
 export type RouterFunction<UserType> = (config: RouterFunctionConfig<UserType>) => void;
@@ -147,7 +147,7 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
         if (!routeConfig.validateShopifyWebhook) {
             // Set up request body parsers
             jsonParserMiddleware = parseJson();
-            formParserMiddleware = parseUrlEncoded({ extended: true, limit: routeConfig.request_size_limit });
+            formParserMiddleware = parseUrlEncoded({ extended: true, limit: routeConfig.requestSizeLimit });
         }
 
         app[method](routeConfig.path, corsMiddleware, jsonParserMiddleware, formParserMiddleware, async function (req: RouterRequest<UserType>, res: RouterResponse<UserType>, next: NextFunction) {
