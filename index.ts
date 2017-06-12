@@ -13,6 +13,26 @@ import {
     } from 'express';
 import { json as parseJson, urlencoded as parseUrlEncoded } from 'body-parser';
 import { seal, unseal } from 'iron-async';
+import parseFiles = require("express-fileupload");
+
+export interface UploadedFile {
+    /**
+     * The file's filename.
+     */
+    name: string;
+    /**
+     * A helper function to move the file elsewhere on your server.
+     */
+    mv: () => void;
+    /**
+     * The file's mimetype, e.g. image/png.
+     */
+    mimetype: string;
+    /**
+     * The file in buffer format.
+     */
+    data: Buffer;
+}
 
 export interface RouterRequest<UserType> extends Request {
     user?: UserType;
@@ -20,6 +40,10 @@ export interface RouterRequest<UserType> extends Request {
     validatedQuery?: any;
     validatedParams?: any;
     domainWithProtocol: string;
+    /**
+     * Files uploaded with the request. Will be undefined if the route config didn't set receivesFiles to true.
+     */
+    files?: { [propName: string]: UploadedFile }
 }
 
 export type WithSessionTokenFunction<UserType> = (user: UserType, expInDays?: number) => Promise<RouterResponse<UserType>>;
@@ -46,6 +70,10 @@ export interface RouterFunctionConfig<UserType> {
      * Size limit for incoming requests to the route. Can be set to a string (e.g. '50mb') or a number representing byte length (e.g. 52428800). Defaults to 1mb.
      */
     requestSizeLimit?: number | string;
+    /**
+     * Whether requests to this route will receive files. Be sure to set requestSizeLimit when receiving files.
+     */
+    receivesFiles?: boolean;
 }
 
 export type RouterFunction<UserType> = (config: RouterFunctionConfig<UserType>) => void;
@@ -132,9 +160,11 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
     // A custom routing function that handles authentication and body/query/param validation
     const route: RouterFunction<UserType> = (routeConfig) => {
         const method = routeConfig.method.toLowerCase();
+        const requestSizeLimit = routeConfig.requestSizeLimit || (1 * 1024 * 1024 /* 1mb in bytes */);
         const corsMiddleware = routeConfig.cors ? cors() : (req, res, next) => next();
         let jsonParserMiddleware = (req, res, next) => next();
         let formParserMiddleware = (req, res, next) => next();
+        let fileParserMiddleware = (req, res, next) => next();
 
         if (routeConfig.cors && routeConfig.method !== "all") {
             // Add an OPTIONS request handler for the path. All non-trivial CORS requests from browsers 
@@ -145,12 +175,22 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
         // Webhook validation must read the body exactly as its sent by Shopify, which is impossible when using parser middleware.
         // If the route requires validation a Shopify webhook, we'll skip parser middleware and parse it ourselves.
         if (!routeConfig.validateShopifyWebhook) {
+            if (routeConfig.receivesFiles) {
+                fileParserMiddleware = parseFiles({
+                    limits: { 
+                        fileSize: requestSizeLimit
+                    },
+                    safeFileNames: true,
+                    preserveExtension: true
+                });
+            }
+            
             // Set up request body parsers
             jsonParserMiddleware = parseJson();
-            formParserMiddleware = parseUrlEncoded({ extended: true, limit: routeConfig.requestSizeLimit });
+            formParserMiddleware = parseUrlEncoded({ extended: true, limit: requestSizeLimit });
         }
 
-        app[method](routeConfig.path, corsMiddleware, jsonParserMiddleware, formParserMiddleware, async function (req: RouterRequest<UserType>, res: RouterResponse<UserType>, next: NextFunction) {
+        app[method](routeConfig.path, corsMiddleware, jsonParserMiddleware, formParserMiddleware, formParserMiddleware, async function (req: RouterRequest<UserType>, res: RouterResponse<UserType>, next: NextFunction) {
             if (res.finished) {
                 // Letting routes continue after a previous route has set headers causes more bugs than good.
                 // For example, we have two PUT routes: api/orders/ship and api/orders/:id. When the ship route finishes
