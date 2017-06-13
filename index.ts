@@ -177,20 +177,20 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
         if (!routeConfig.validateShopifyWebhook) {
             if (routeConfig.receivesFiles) {
                 fileParserMiddleware = parseFiles({
-                    limits: { 
+                    limits: {
                         fileSize: requestSizeLimit
                     },
                     safeFileNames: true,
                     preserveExtension: true
                 });
             }
-            
+
             // Set up request body parsers
             jsonParserMiddleware = parseJson();
             formParserMiddleware = parseUrlEncoded({ extended: true, limit: requestSizeLimit });
         }
 
-        app[method](routeConfig.path, corsMiddleware, jsonParserMiddleware, formParserMiddleware, formParserMiddleware, async function (req: RouterRequest<UserType>, res: RouterResponse<UserType>, next: NextFunction) {
+        app[method](routeConfig.path, corsMiddleware, jsonParserMiddleware, fileParserMiddleware, formParserMiddleware, async function (req: RouterRequest<UserType>, res: RouterResponse<UserType>, next: NextFunction) {
             if (res.finished) {
                 // Letting routes continue after a previous route has set headers causes more bugs than good.
                 // For example, we have two PUT routes: api/orders/ship and api/orders/:id. When the ship route finishes
