@@ -23,7 +23,7 @@ export interface UploadedFile {
     /**
      * A helper function to move the file elsewhere on your server.
      */
-    mv: () => void;
+    mv: (destination: string) => Promise<void>;
     /**
      * The file's mimetype, e.g. image/png.
      */
@@ -222,6 +222,25 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
             }
 
             req.domainWithProtocol = `${req.protocol}://${req.hostname}` + (req.hostname === "localhost" ? ":3000" : "");
+            req.files = req.files || {};
+
+            // Promisify the mv function on all files
+            Object.keys(req.files).forEach(key => {
+                const file = req.files[key];
+                const originalMv = file.mv as (destination: string, cb: (err?: Error) => void) => void;
+
+                if (typeof (file.mv) !== "function") {
+                    return;
+                }
+
+                file.mv = (destination) => new Promise((resolve, reject) => originalMv(destination, err => {
+                    if (err) {
+                        return reject(err);
+                    }
+
+                    return resolve();
+                }));
+            });
 
             if (routeConfig.requireAuth) {
                 const header = req.header(config.auth_header_name || "gearworks_auth");
