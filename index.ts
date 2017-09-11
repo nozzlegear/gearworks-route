@@ -78,12 +78,14 @@ export interface RouterFunctionConfig<UserType> {
 
 export type RouterFunction<UserType> = (config: RouterFunctionConfig<UserType>) => void;
 
+export type SealableUserProps<UserType> = (keyof UserType)[]
+
 export interface Config<UserType> {
     iron_password: string;
     jwt_secret_key: string;
     shopify_secret_key: string;
     auth_header_name?: string;
-    sealable_user_props?: (keyof UserType)[];
+    sealable_user_props?: SealableUserProps<UserType>;
     userAuthIsValid?: (user: UserType) => boolean | Promise<boolean>;
 }
 
@@ -95,6 +97,45 @@ export interface SessionTokenResponse {
  * The object sent to a client after calling res.withSessionToken<UserType>(user);
  */
 export type SessionToken<UserType> = UserType & { exp: number };
+
+export interface CreateSessionTokenConfig<UserType> {
+    iron_password: string
+    jwt_secret_key: string
+    sealable_user_props: SealableUserProps<UserType>
+}
+
+const JWT_ALGORITHM = "HS256";
+
+/**
+ * Encrypts a user object, converting it to a session token string.
+ */
+export async function createSessionToken<UserType>(user: UserType, config: CreateSessionTokenConfig<UserType>, expInDays = 30): Promise<SessionTokenResponse> {
+    // Encrypt any sensitive properties (access tokens, api keys, etc.) with Iron.
+    const sealedProps = await Bluebird.reduce(config.sealable_user_props, async (result, propName: string) => {
+        if (!!user[propName]) {
+            try {
+                result[propName] = await seal(user[propName], config.iron_password);
+            } catch (e) {
+                inspect(`Failed to encrypt Iron-sealed property ${propName}. Removing property from resulting session token object.`, e);
+
+                // Prevent sending the unencrypted value to the client.
+                result[propName] = undefined;
+            }
+        }
+
+        return result;
+    }, {});
+
+    // exp: Part of the jwt spec, specifies an expiration date for the token.
+    const exp = Date.now() + (expInDays * 24 * 60 * 60 * 1000);
+    const session: SessionToken<UserType> = {
+        ...user as any,
+        exp,
+        ...sealedProps,
+    }
+
+    return { token: encode(session, config.jwt_secret_key, JWT_ALGORITHM) }
+}
 
 export default function getRouter<UserType>(app: Express, config: Config<UserType>) {
     // Add configuration defaults
@@ -123,35 +164,15 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
         throw error;
     }
 
-    const jwtAlgorithm = "HS256";
-
     // Custom functions for Express request and response objects
     const withSessionToken: WithSessionTokenFunction<UserType> = async function (this: RouterResponse<UserType>, user: UserType, expInDays = 30) {
-        // Encrypt any sensitive properties (access tokens, api keys, etc.) with Iron.
-        const sealedProps = await Bluebird.reduce(config.sealable_user_props, async (result, propName: string) => {
-            if (!!user[propName]) {
-                try {
-                    result[propName] = await seal(user[propName], config.iron_password);
-                } catch (e) {
-                    inspect(`Failed to encrypt Iron-sealed property ${propName}. Removing property from resulting session token object.`, e);
+        const token = await createSessionToken(user, {
+            iron_password: config.iron_password,
+            jwt_secret_key: config.jwt_secret_key,
+            sealable_user_props: config.sealable_user_props || []
+        }, expInDays)
 
-                    // Prevent sending the unencrypted value to the client.
-                    result[propName] = undefined;
-                }
-            }
-
-            return result;
-        }, {});
-
-        // exp: Part of the jwt spec, specifies an expiration date for the token.
-        const exp = Date.now() + (expInDays * 24 * 60 * 60 * 1000);
-        const session: SessionToken<UserType> = {
-            ...user as any,
-            exp,
-            ...sealedProps,
-        }
-
-        return this.json<SessionTokenResponse>({ token: encode(session, config.jwt_secret_key, jwtAlgorithm) }) as RouterResponse<UserType>;
+        return this.json<SessionTokenResponse>(token) as RouterResponse<UserType>;
     };
 
     // Shim the app.response and app.request objects with our custom functions
@@ -167,7 +188,7 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
         let fileParserMiddleware = (req, res, next) => next();
 
         if (routeConfig.cors && routeConfig.method !== "all") {
-            // Add an OPTIONS request handler for the path. All non-trivial CORS requests from browsers 
+            // Add an OPTIONS request handler for the path. All non-trivial CORS requests from browsers
             // send an OPTIONS preflight request.
             app.options(routeConfig.path, cors());
         }
@@ -207,7 +228,7 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
                 let user;
 
                 try {
-                    user = decode(header, config.jwt_secret_key, false, jwtAlgorithm);
+                    user = decode(header, config.jwt_secret_key, false, JWT_ALGORITHM);
                 } catch (e) {
                     return next(boom.unauthorized(`Missing or invalid ${config.auth_header_name || "gearworks_auth"} header.`));
                 }
