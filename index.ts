@@ -29,7 +29,8 @@ export interface UploadedFile {
     data: Buffer;
 }
 
-export interface RouterRequest<UserType> extends Request {
+export interface RouterRequest<UserType, ServerSettings extends object> extends Request {
+    settings: ServerSettings;
     user?: UserType;
     validatedBody?: any;
     validatedQuery?: any;
@@ -51,11 +52,11 @@ export interface RouterResponse<UserType> extends Response {
     json: <DataType>(data: DataType) => RouterResponse<UserType>;
 }
 
-export interface RouterFunctionConfig<UserType> {
+export interface RouterFunctionConfig<UserType, ServerSettings extends object = {}> {
     method: "get" | "post" | "put" | "delete" | "head" | "all";
     path: string;
     handler: (
-        req: RouterRequest<UserType>,
+        req: RouterRequest<UserType, ServerSettings>,
         res: RouterResponse<UserType>,
         next: NextFunction
     ) => void | any;
@@ -86,12 +87,13 @@ type UserProperty<UserType> = UserType[keyof UserType];
 
 type SealedUserProps<UserType> = { [K in keyof UserType]: UserProperty<UserType> | string };
 
-export interface Config<UserType> {
+export interface Config<UserType, ServerSettings extends object = {}> {
     iron_password: string;
     jwt_secret_key: string;
     shopify_secret_key: string;
     auth_header_name?: string;
     sealable_user_props?: SealableUserProps<UserType>;
+    serverSettings?: ServerSettings;
     userAuthIsValid?: (user: UserType) => boolean | Promise<boolean>;
 }
 
@@ -156,12 +158,16 @@ export async function createSessionToken<UserType extends {}>(
     return { token: encode(session, config.jwt_secret_key, JWT_ALGORITHM) };
 }
 
-export default function getRouter<UserType>(app: Express, config: Config<UserType>) {
+export default function getRouter<UserType, ServerSettings extends object>(
+    app: Express,
+    config: Config<UserType, ServerSettings>
+) {
     // Add configuration defaults
     config = {
         auth_header_name: "gearworks_auth",
         sealable_user_props: [],
         userAuthIsValid: async user => true,
+        serverSettings: {} as ServerSettings,
         ...config
     };
 
@@ -251,7 +257,7 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
             fileParserMiddleware,
             formParserMiddleware,
             async function(
-                req: RouterRequest<UserType>,
+                req: RouterRequest<UserType, ServerSettings>,
                 res: RouterResponse<UserType>,
                 next: NextFunction
             ) {
@@ -268,6 +274,12 @@ export default function getRouter<UserType>(app: Express, config: Config<UserTyp
                     `${req.protocol}://${req.hostname}` +
                     (req.hostname === "localhost" ? ":3000" : "");
                 req.files = req.files || {};
+
+                // Merge server settings with regular settings
+                req.settings = {
+                    ...(req.settings as any),
+                    ...(config.serverSettings as any)
+                };
 
                 // Promisify the mv function on all files
                 Object.keys(req.files).forEach(key => {
