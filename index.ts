@@ -79,7 +79,9 @@ export interface RouterFunctionConfig<UserType, ServerSettings extends object = 
     receivesFiles?: boolean;
 }
 
-export type RouterFunction<UserType> = (config: RouterFunctionConfig<UserType>) => void;
+export type RouterFunction<UserType, ServerSettings extends object = {}> = (
+    config: RouterFunctionConfig<UserType, ServerSettings>
+) => void;
 
 export type SealableUserProps<UserType> = (keyof UserType)[];
 
@@ -158,7 +160,7 @@ export async function createSessionToken<UserType extends {}>(
     return { token: encode(session, config.jwt_secret_key, JWT_ALGORITHM) };
 }
 
-export default function getRouter<UserType, ServerSettings extends object>(
+export default function getRouter<UserType, ServerSettings extends object = {}>(
     app: Express,
     config: Config<UserType, ServerSettings>
 ) {
@@ -218,7 +220,7 @@ export default function getRouter<UserType, ServerSettings extends object>(
     app.response["withSessionToken"] = withSessionToken;
 
     // A custom routing function that handles authentication and body/query/param validation
-    const route: RouterFunction<UserType> = routeConfig => {
+    const route: RouterFunction<UserType, ServerSettings> = routeConfig => {
         const method = routeConfig.method.toLowerCase();
         const requestSizeLimit = routeConfig.requestSizeLimit || 1 * 1024 * 1024 /* 1mb in bytes */;
         const corsMiddleware = routeConfig.cors ? cors() : (req, res, next) => next();
