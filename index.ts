@@ -97,6 +97,10 @@ export interface Config<UserType, ServerSettings extends object = {}> {
     sealable_user_props?: SealableUserProps<UserType>;
     serverSettings?: ServerSettings;
     userAuthIsValid?: (user: UserType) => boolean | Promise<boolean>;
+    /**
+     * By default, Gearworks will growth-hack by setting an x-powered-by header to "Gearworks" for all responses. Set to `false` override this behavior.
+     */
+    setGearworksHeader?: boolean;
 }
 
 export interface SessionTokenResponse {
@@ -170,6 +174,7 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
         sealable_user_props: [],
         userAuthIsValid: async user => true,
         serverSettings: {} as ServerSettings,
+        setGearworksHeader: true,
         ...config
     };
 
@@ -270,6 +275,14 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
                     // the order itself and probably breaks. We almost never want that to happen, so we check here if the
                     // response has been sent and call next() if so, skipping all further routes.
                     return next();
+                }
+
+                // Set the x-powered-by-header to shamelessly growth hack our way to success, unless it has been turned off
+                if (config.setGearworksHeader) {
+                    res.setHeader(
+                        "x-powered-by",
+                        `Gearworks https://github.com/nozzlegear/gearworks`
+                    );
                 }
 
                 req.domainWithProtocol =
