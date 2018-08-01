@@ -42,3 +42,6 @@ bin/
 
 # Ignore vim temp files
 *~
+
+# VSCode
+.vscode
