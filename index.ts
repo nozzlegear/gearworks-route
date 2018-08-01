@@ -8,6 +8,7 @@ import { decode, encode } from "jwt-simple";
 import { Express, NextFunction, Request, Response } from "express";
 import { json as parseJson, urlencoded as parseUrlEncoded } from "body-parser";
 import { seal, unseal } from "iron-async";
+import { pipe, Async } from "@nozzlegear/railway";
 import parseFiles = require("express-fileupload");
 
 export interface UploadedFile {
@@ -52,14 +53,16 @@ export interface RouterResponse<UserType> extends Response {
     json: <DataType>(data: DataType) => RouterResponse<UserType>;
 }
 
+export type RouteHandler<UserType, ServerSettings extends object = {}> = (
+    req: RouterRequest<UserType, ServerSettings>,
+    res: RouterResponse<UserType>,
+    next: NextFunction
+) => void | Promise<void>;
+
 export interface RouterFunctionConfig<UserType, ServerSettings extends object = {}> {
     method: "get" | "post" | "put" | "delete" | "head" | "all";
     path: string;
-    handler: (
-        req: RouterRequest<UserType, ServerSettings>,
-        res: RouterResponse<UserType>,
-        next: NextFunction
-    ) => void | any;
+    handler: RouteHandler<UserType, ServerSettings>;
     label?: string;
     cors?: boolean;
     requireAuth?: boolean;
@@ -98,6 +101,10 @@ export interface Config<UserType, ServerSettings extends object = {}> {
     serverSettings?: ServerSettings;
     userAuthIsValid?: (user: UserType) => boolean | Promise<boolean>;
     /**
+     * A function that gets executed before every request, including the request's validation functions. If `next` is called with any parameter the request handler pipeline will short circuit and immediately return a response to the caller.
+     */
+    onBeforeRequest?: RouteHandler<UserType, ServerSettings>;
+    /**
      * By default, Gearworks will growth-hack by setting an x-powered-by header to "Gearworks" for all responses. Set to `false` override this behavior.
      */
     setGearworksHeader?: boolean;
@@ -117,6 +124,13 @@ export interface CreateSessionTokenConfig<UserType> {
     jwt_secret_key: string;
     sealable_user_props: SealableUserProps<UserType>;
 }
+
+type Curried<T, U> = (arg: T) => U;
+
+type ReqResTuple<T, U extends object = {}> = {
+    req: RouterRequest<T, U>;
+    res: RouterResponse<T>;
+};
 
 const JWT_ALGORITHM = "HS256";
 
@@ -172,9 +186,10 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
     config = {
         auth_header_name: "gearworks_auth",
         sealable_user_props: [],
-        userAuthIsValid: async user => true,
         serverSettings: {} as ServerSettings,
         setGearworksHeader: true,
+        userAuthIsValid: async user => true,
+        onBeforeRequest: (req, res, next) => next(),
         ...config
     };
 
@@ -279,15 +294,11 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
 
                 // Set the x-powered-by-header to shamelessly growth hack our way to success, unless it has been turned off
                 if (config.setGearworksHeader) {
-                    res.setHeader(
-                        "x-powered-by",
-                        `Gearworks https://github.com/nozzlegear/gearworks`
-                    );
+                    res.setHeader("x-powered-by", "Gearworks https://github.com/nozzlegear/gearworks");
                 }
 
                 req.domainWithProtocol =
-                    `${req.protocol}://${req.hostname}` +
-                    (req.hostname === "localhost" ? ":3000" : "");
+                    `${req.protocol}://${req.hostname}` + (req.hostname === "localhost" ? ":3000" : "");
                 req.files = req.files || {};
 
                 // Merge server settings with regular settings
@@ -299,10 +310,7 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
                 // Promisify the mv function on all files
                 Object.keys(req.files).forEach(key => {
                     const file = req.files[key];
-                    const originalMv = file.mv as (
-                        destination: string,
-                        cb: (err?: Error) => void
-                    ) => void;
+                    const originalMv = file.mv as (destination: string, cb: (err?: Error) => void) => void;
 
                     if (typeof file.mv !== "function") {
                         return;
@@ -329,19 +337,14 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
                     } catch (e) {
                         return next(
                             boom.unauthorized(
-                                `Missing or invalid ${config.auth_header_name ||
-                                    "gearworks_auth"} header.`
+                                `Missing or invalid ${config.auth_header_name || "gearworks_auth"} header.`
                             )
                         );
                     }
 
                     // Ensure the decoded object is a user
                     if (!decodedUser) {
-                        return next(
-                            boom.unauthorized(
-                                `Decoded JWT token does not appear to be a valid user object.`
-                            )
-                        );
+                        return next(boom.unauthorized(`Decoded JWT token does not appear to be a valid user object.`));
                     }
 
                     // Decrypt sensitive Iron-sealed properties
@@ -352,17 +355,11 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
 
                             if (prop && typeof prop === "string") {
                                 try {
-                                    const unsealed = await unseal<UserProperty<UserType>>(
-                                        prop,
-                                        config.iron_password
-                                    );
+                                    const unsealed = await unseal<UserProperty<UserType>>(prop, config.iron_password);
 
                                     result[propName] = unsealed;
                                 } catch (e) {
-                                    inspect(
-                                        `Failed to decrypt Iron-sealed property ${propName}.`,
-                                        e
-                                    );
+                                    inspect(`Failed to decrypt Iron-sealed property ${propName}.`, e);
                                 }
                             }
 
@@ -390,10 +387,7 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
                             );
                         }
                     } catch (e) {
-                        inspect(
-                            `Error attempting to check if user's auth is valid. Assuming true.`,
-                            e
-                        );
+                        inspect(`Error attempting to check if user's auth is valid. Assuming true.`, e);
                     }
 
                     req.user = user;
@@ -405,10 +399,7 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
                     });
 
                     if (validation.error) {
-                        const error = boom.badData(
-                            validation.error.message,
-                            validation.error.details
-                        );
+                        const error = boom.badData(validation.error.message, validation.error.details);
 
                         return next(error);
                     }
@@ -422,10 +413,7 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
                     });
 
                     if (validation.error) {
-                        const error = boom.badData(
-                            validation.error.message,
-                            validation.error.details
-                        );
+                        const error = boom.badData(validation.error.message, validation.error.details);
 
                         return next(error);
                     }
@@ -439,10 +427,7 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
                     });
 
                     if (validation.error) {
-                        const error = boom.badData(
-                            validation.error.message,
-                            validation.error.details
-                        );
+                        const error = boom.badData(validation.error.message, validation.error.details);
 
                         return next(error);
                     }
@@ -451,15 +436,10 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
                 }
 
                 if (routeConfig.validateShopifyRequest) {
-                    const isValid = await Auth.isAuthenticRequest(
-                        req.query,
-                        config.shopify_secret_key
-                    );
+                    const isValid = await Auth.isAuthenticRequest(req.query, config.shopify_secret_key);
 
                     if (!isValid) {
-                        const error = boom.forbidden(
-                            "Request does not pass Shopify's request validation scheme."
-                        );
+                        const error = boom.forbidden("Request does not pass Shopify's request validation scheme.");
 
                         return next(error);
                     }
@@ -467,17 +447,9 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
 
                 if (routeConfig.validateShopifyWebhook) {
                     // If the body is empty, there's no way to validate the webhook.
-                    if (
-                        req.headers["transfer-encoding"] === undefined &&
-                        isNaN(req.headers["content-length"] as any)
-                    ) {
-                        const error = boom.forbidden(
-                            "Request does not pass Shopify's webhook validation scheme."
-                        );
-                        inspect(
-                            "Webhook body appears to be empty and cannot be validated. Headers:",
-                            req.headers
-                        );
+                    if (req.headers["transfer-encoding"] === undefined && isNaN(req.headers["content-length"] as any)) {
+                        const error = boom.forbidden("Request does not pass Shopify's webhook validation scheme.");
+                        inspect("Webhook body appears to be empty and cannot be validated. Headers:", req.headers);
 
                         return next(error);
                     }
@@ -490,16 +462,10 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
                         req.on("end", () => res(body));
                     });
 
-                    const isValid = await Auth.isAuthenticWebhook(
-                        req.headers,
-                        rawBody,
-                        config.shopify_secret_key
-                    );
+                    const isValid = await Auth.isAuthenticWebhook(req.headers, rawBody, config.shopify_secret_key);
 
                     if (!isValid) {
-                        const error = boom.forbidden(
-                            "Request does not pass Shopify's webhook validation scheme."
-                        );
+                        const error = boom.forbidden("Request does not pass Shopify's webhook validation scheme.");
 
                         return next(error);
                     }
@@ -510,24 +476,70 @@ export default function getRouter<UserType, ServerSettings extends object = {}>(
                 }
 
                 if (routeConfig.validateShopifyProxyPage) {
-                    const isValid = await Auth.isAuthenticProxyRequest(
-                        req.query,
-                        config.shopify_secret_key
-                    );
+                    const isValid = await Auth.isAuthenticProxyRequest(req.query, config.shopify_secret_key);
 
                     if (!isValid) {
-                        const error = boom.forbidden(
-                            "Request does not pass Shopify's proxy page validation scheme."
-                        );
+                        const error = boom.forbidden("Request does not pass Shopify's proxy page validation scheme.");
 
                         return next(error);
                     }
                 }
 
-                // Pass control to the route's handler. Handlers can be async, so wrap them in a bluebird resolve which can catch unhandled promise rejections.
-                Bluebird.resolve(routeConfig.handler(req, res, next)).catch(e => {
-                    return next(e);
-                });
+                // A flag that indicates whether one of the handlers has called next with an error, indicating it should skip the next handlers and return a response
+                let shouldReturn = false;
+
+                function resolveAfterCallback(
+                    handler: RouteHandler<UserType, ServerSettings>
+                ): Curried<ReqResTuple<UserType, ServerSettings>, Promise<ReqResTuple<UserType, ServerSettings>>> {
+                    return ({ req, res }) =>
+                        new Promise((resolve, reject) => {
+                            const nextFn = (err?: Error) => {
+                                if (err) {
+                                    shouldReturn = true;
+
+                                    // Immediately send results back to caller and skip next handlers
+                                    next(err);
+                                }
+
+                                resolve({ req, res });
+                            };
+
+                            if (shouldReturn) {
+                                // A previous handler indicates that it received an error. No further handlers should run.
+                                return resolve({ req, res });
+                            }
+
+                            // This is specifically *not* awaiting, because we want to either return to caller or continue down the chain as quickly as possible when next is called.
+                            Bluebird.resolve(handler(req, res, nextFn)).catch(reject);
+                        });
+                }
+
+                // A utility function that binds a promise back to an Async
+                function bindPromise<T, U>(fn: (arg: T) => Promise<U>): (async: Async<T>) => Async<U> {
+                    return async => async.bind(arg => Async.ofPromise(fn(arg)));
+                }
+
+                // Execute the handler pipeline
+                await pipe({ req, res })
+                    .chain(Async.wrap)
+                    .chain(bindPromise(resolveAfterCallback(config.onBeforeRequest)))
+                    .chain(bindPromise(resolveAfterCallback(routeConfig.handler)))
+                    .chain(
+                        Async.iter(_ => {
+                            if (!shouldReturn) {
+                                // Handlers have finished with no errors.
+                                shouldReturn = true;
+
+                                return next();
+                            }
+                        })
+                    )
+                    .value()
+                    .catch(e => {
+                        shouldReturn = true;
+
+                        return next(e);
+                    });
             }
         );
     };

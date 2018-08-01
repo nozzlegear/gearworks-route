@@ -1,4 +1,5 @@
 import router from "./";
+import { Config } from "./";
 import express = require("express");
 
 interface User {
@@ -15,6 +16,7 @@ const route = router<User, ServerSettings>(express(), {
     iron_password: "test",
     jwt_secret_key: "test",
     shopify_secret_key: "",
+    onBeforeRequest: (req, res, next) => {},
     serverSettings: {
         cityName: "Teldrassil"
     }
